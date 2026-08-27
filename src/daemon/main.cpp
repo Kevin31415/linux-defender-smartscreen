@@ -11,6 +11,14 @@
 
 namespace fs = std::filesystem;
 
+static smartscreen::daemon::Watcher* g_watcher = nullptr;
+
+static void signalHandler(int sig) {
+    if (g_watcher) {
+        g_watcher->stop();
+    }
+}
+
 static std::string getDownloadsDir() {
     const char* home = std::getenv("HOME");
     if (!home) {
@@ -113,6 +121,15 @@ static int cmdDaemon() {
     smartscreen::logger::logInfo("监控目录: " + downloadsDir);
 
     smartscreen::daemon::Watcher watcher(downloadsDir);
+    g_watcher = &watcher;
+
+    // 设置信号处理
+    struct sigaction sa{};
+    sa.sa_handler = signalHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGTERM, &sa, nullptr);
 
     watcher.start([&downloadsDir](const std::string& filepath) {
         fs::path p(filepath);
@@ -135,7 +152,7 @@ static int cmdDaemon() {
         smartscreen::logger::logTag(filepath, taggedPath);
     });
 
-    // 信号处理
+    // 等待信号
     sigset_t mask;
     sigemptyset(&mask);
     sigaddset(&mask, SIGINT);
@@ -145,6 +162,7 @@ static int cmdDaemon() {
     int sig;
     sigwait(&mask, &sig);
 
+    g_watcher = nullptr;
     watcher.stop();
     smartscreen::logger::logInfo("smartscreend 已退出");
     return 0;

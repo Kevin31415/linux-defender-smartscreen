@@ -1,7 +1,5 @@
 #include <QApplication>
-#include <QMessageBox>
 #include <QString>
-#include <QStringList>
 #include <iostream>
 
 #include "dialogwindow.h"
@@ -24,15 +22,10 @@ int main(int argc, char* argv[]) {
     }
 
     QApplication app(argc, argv);
-    app.setQuitOnLastWindowClosed(false);
+    app.setQuitOnLastWindowClosed(true);
 
-    DialogWindow window(filePath);
-    window.show();
+    DialogWindow dialog(filePath);
+    dialog.exec();
 
-    // 等待窗口关闭
-    QEventLoop loop;
-    QObject::connect(&window, &QMainWindow::destroyed, &loop, &QEventLoop::quit);
-    loop.exec();
-
-    return window.userAccepted() ? 0 : 1;
+    return dialog.userAccepted() ? 0 : 1;
 }

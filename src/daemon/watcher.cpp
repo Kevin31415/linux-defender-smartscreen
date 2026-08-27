@@ -29,7 +29,7 @@ void Watcher::start(FileCallback onNewFile) {
         return;
     }
 
-    uint32_t mask = IN_CLOSE_WRITE | IN_MOVED_TO;
+    uint32_t mask = IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE;
     int wd = inotify_add_watch(inotifyFd_, watchDir_.c_str(), mask);
     if (wd < 0) {
         logger::logWarn("inotify_add_watch 失败: " + watchDir_ + " - " + strerror(errno));
@@ -42,7 +42,7 @@ void Watcher::start(FileCallback onNewFile) {
     logger::logInfo("开始监控目录: " + watchDir_);
 
     watchThread_ = std::thread([this, onNewFile, wd]() {
-        constexpr size_t BUF_SIZE = 4096;
+        constexpr size_t BUF_SIZE = 8192;
         alignas(inotify_event) char buf[BUF_SIZE];
 
         while (running_.load()) {
@@ -59,12 +59,26 @@ void Watcher::start(FileCallback onNewFile) {
             for (char* ptr = buf; ptr < buf + len; ) {
                 auto* event = reinterpret_cast<inotify_event*>(ptr);
 
-                if (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO)) {
-                    if (!(event->mask & IN_ISDIR) && event->len > 0) {
-                        std::string filepath = watchDir_ + "/" + event->name;
-                        if (fs::exists(filepath) && fs::is_regular_file(filepath)) {
-                            onNewFile(filepath);
-                        }
+                // 跳过目录事件
+                if (event->mask & IN_ISDIR) {
+                    ptr += sizeof(inotify_event) + event->len;
+                    continue;
+                }
+
+                // 只处理文件事件
+                if (event->len > 0 &&
+                    (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE))) {
+                    std::string filepath = watchDir_ + "/" + event->name;
+
+                    // 等待文件写入完成（特别是 IN_CREATE 后可能还有写入）
+                    if (event->mask & IN_CREATE) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                    }
+
+                    // 验证文件存在且是常规文件
+                    std::error_code ec;
+                    if (fs::is_regular_file(filepath, ec) && !ec) {
+                        onNewFile(filepath);
                     }
                 }
 

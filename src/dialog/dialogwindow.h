@@ -1,35 +1,40 @@
 #ifndef SMARTSCREEN_DIALOGWINDOW_H
 #define SMARTSCREEN_DIALOGWINDOW_H
 
-#include <QMainWindow>
+#include <QDialog>
 #include <QLabel>
 #include <QPushButton>
-#include <QVBoxLayout>
 
-class DialogWindow : public QMainWindow {
+class DialogWindow : public QDialog {
     Q_OBJECT
 
 public:
     explicit DialogWindow(const QString& filePath, QWidget* parent = nullptr);
     ~DialogWindow() override = default;
 
-    // 获取用户选择结果: true=允许, false=取消
     bool userAccepted() const { return accepted_; }
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
 
 private slots:
     void onAccept();
     void onReject();
 
 private:
+    void setupUi();
+    void setInfoText(const QString& publisher, const QString& fileType, const QString& appName);
+
     QString filePath_;
     bool accepted_ = false;
 
-    QLabel* iconLabel_;
     QLabel* titleLabel_;
-    QLabel* messageLabel_;
-    QLabel* fileLabel_;
-    QPushButton* acceptButton_;
-    QPushButton* rejectButton_;
+    QLabel* descLabel_;
+    QLabel* publisherValue_;
+    QLabel* fileTypeValue_;
+    QLabel* appValue_;
+    QPushButton* runButton_;
+    QPushButton* noRunButton_;
 };
 
 #endif // SMARTSCREEN_DIALOGWINDOW_H
