@@ -21,3 +21,12 @@ add_to_rc "$HOME/.bashrc"
 add_to_rc "$HOME/.zshenv"
 add_to_rc "$HOME/.profile"
 add_to_rc "$HOME/.xprofile"
+add_to_rc "$HOME/.xsessionrc"
+
+# Wayland: systemd environment.d
+mkdir -p "$HOME/.config/environment.d"
+ED="$HOME/.config/environment.d/smartscreen.conf"
+if ! grep -q "LD_PRELOAD=.*libsmartscreen_hook" "$ED" 2>/dev/null; then
+    echo "LD_PRELOAD=$HOOK_PATH" > "$ED"
+    echo "已写入 $ED"
+fi

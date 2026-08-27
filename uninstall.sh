@@ -17,8 +17,14 @@ remove_from_rc "$HOME/.bashrc"
 remove_from_rc "$HOME/.zshenv"
 remove_from_rc "$HOME/.profile"
 remove_from_rc "$HOME/.xprofile"
+remove_from_rc "$HOME/.xsessionrc"
+
+# Wayland: systemd environment.d
+ED="$HOME/.config/environment.d/smartscreen.conf"
+if [ -f "$ED" ]; then
+    rm "$ED"
+    echo "已移除 $ED"
+fi
 
 echo ""
-echo "卸载完成。请执行以下命令生效："
-echo "  source ~/.bashrc"
-echo "  source ~/.zshenv"
+echo "卸载完成。请重新登录生效。"
