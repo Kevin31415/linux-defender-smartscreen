@@ -45,6 +45,9 @@ qrc_*.cpp
 *~
 .DS_Store
 
+# Plan file (local only)
+plan.md
+
 # Package files
 *.tar.gz
 *.zip
