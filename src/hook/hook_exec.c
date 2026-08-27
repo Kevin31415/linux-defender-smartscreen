@@ -9,6 +9,8 @@
 #include <fcntl.h>
 #include <limits.h>
 
+extern char** environ;
+
 // 原始 exec 函数指针
 typedef int (*execve_fn)(const char*, char* const[], char* const[]);
 typedef int (*execv_fn)(const char*, char* const[]);
@@ -27,7 +29,6 @@ static __thread int in_hook = 0;
 static const char* find_dialog_path(void) {
     static char path[PATH_MAX];
 
-    // 优先: 同目录下的 smartscreen-dialog
     char self_dir[PATH_MAX];
     ssize_t len = readlink("/proc/self/exe", self_dir, sizeof(self_dir) - 1);
     if (len > 0) {
@@ -40,11 +41,9 @@ static const char* find_dialog_path(void) {
         }
     }
 
-    // 回退: 从环境变量
     const char* env = getenv("SMARTSCREEN_DIALOG");
     if (env && access(env, X_OK) == 0) return env;
 
-    // 回退: PATH 中查找
     const char* pathenv = getenv("PATH");
     if (pathenv) {
         char* pathcopy = strdup(pathenv);
@@ -68,10 +67,8 @@ int hook_is_tagged(const char* filename) {
     if (!filename) return 0;
     const char* at = strchr(filename, '@');
     if (!at) return 0;
-    // 后面必须跟着 '.' (普通文件) 或者是末尾的 "@." (无扩展名)
     if (*(at + 1) == '.') return 1;
     if (*(at + 1) == '\0' && at > filename && *(at - 1) != '/') return 1;
-    // 点文件: .@.xxx
     if (at == filename + 1 && filename[0] == '.' && *(at + 1) == '.') return 1;
     return 0;
 }
@@ -137,12 +134,10 @@ int hook_launch_dialog(const char* filepath) {
     if (pid < 0) return -1;
 
     if (pid == 0) {
-        // 子进程: 执行 smartscreen-dialog
         execl(dialog, "smartscreen-dialog", "--file", filepath, (char*)NULL);
         _exit(127);
     }
 
-    // 父进程: 等待
     int status;
     waitpid(pid, &status, 0);
 
@@ -153,37 +148,44 @@ int hook_launch_dialog(const char* filepath) {
 }
 
 // 核心拦截逻辑
-static int hook_check_and_intercept(const char* filename) {
+// 返回值: 0=正常继续, 1=已重定向执行(调用者不应再调用exec), -1=拒绝
+static int hook_check_and_intercept(const char* filename, char* const argv[], char* const envp[]) {
     if (in_hook) return 0;
     if (!filename) return 0;
 
-    // 只处理带标签的文件
     if (!hook_is_tagged(filename)) return 0;
 
-    // 获取绝对路径
+    // 尝试解析绝对路径 (支持相对路径)
     char resolved[PATH_MAX];
     if (realpath(filename, resolved) == NULL) {
-        // 文件不存在，不拦截
-        return 0;
+        // realpath 失败，使用原始路径
+        snprintf(resolved, sizeof(resolved), "%s", filename);
     }
 
     in_hook = 1;
 
-    // 弹窗询问
     int result = hook_launch_dialog(resolved);
 
+    in_hook = 0;
+
     if (result == 0) {
-        // 用户允许: 移除标签并重命名
+        // 用户允许: 重命名文件回原名
         char original[PATH_MAX];
         if (hook_untag_name(resolved, original, sizeof(original))) {
             rename(resolved, original);
         }
-        in_hook = 0;
-        return 0; // 继续执行
+
+        // 用原名重新执行 (替换当前进程)
+        if (real_execve) {
+            real_execve(original, argv, envp);
+        } else {
+            execve(original, argv, envp);
+        }
+        return -1;
     }
 
-    in_hook = 0;
-    return 1; // 阻止执行
+    // 对话框启动失败或用户取消: 阻止执行
+    return 1;
 }
 
 // ===== Hook execve =====
@@ -192,7 +194,14 @@ int execve(const char* filename, char* const argv[], char* const envp[]) {
         real_execve = (execve_fn)dlsym(RTLD_NEXT, "execve");
     }
 
-    if (hook_check_and_intercept(filename)) {
+    int ret = hook_check_and_intercept(filename, argv, envp);
+    if (ret != 0) {
+        // ret==1: 用户取消, 返回错误
+        // ret==-1: 已重定向执行，理论上不会到这里
+        if (ret == 1) {
+            // 设置 errno 为用户取消
+            return -1;
+        }
         return -1;
     }
 
@@ -205,7 +214,9 @@ int execv(const char* filename, char* const argv[]) {
         real_execv = (execv_fn)dlsym(RTLD_NEXT, "execv");
     }
 
-    if (hook_check_and_intercept(filename)) {
+    // execv 使用当前环境变量
+    int ret = hook_check_and_intercept(filename, argv, (char* const*)environ);
+    if (ret != 0) {
         return -1;
     }
 
@@ -218,7 +229,8 @@ int execvp(const char* filename, char* const argv[]) {
         real_execvp = (execvp_fn)dlsym(RTLD_NEXT, "execvp");
     }
 
-    if (hook_check_and_intercept(filename)) {
+    int ret = hook_check_and_intercept(filename, argv, (char* const*)environ);
+    if (ret != 0) {
         return -1;
     }
 
@@ -231,15 +243,13 @@ int execvpe(const char* filename, char* const argv[], char* const envp[]) {
         real_execvpe = (execvpe_fn)dlsym(RTLD_NEXT, "execvpe");
     }
 
-    if (hook_check_and_intercept(filename)) {
+    int ret = hook_check_and_intercept(filename, argv, envp);
+    if (ret != 0) {
         return -1;
     }
 
     return real_execvpe(filename, argv, envp);
 }
-
-// ===== Hook system() 中的 exec =====
-// system() 内部调用 execve，已被上面的 hook 拦截
 
 // ===== 构造/析构 =====
 __attribute__((constructor))

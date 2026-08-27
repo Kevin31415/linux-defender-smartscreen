@@ -62,6 +62,14 @@ static int cmdTag(const std::string& filepath) {
         return 0;
     }
 
+    // 只标记有执行权限的文件
+    std::error_code permEc;
+    auto perms = fs::status(p, permEc).permissions();
+    if (permEc || (perms & fs::perms::owner_exec) == fs::perms::none) {
+        smartscreen::logger::logWarn("文件无执行权限，跳过: " + filepath);
+        return 1;
+    }
+
     std::string taggedPath = smartscreen::tagging::tagPath(filepath);
     std::error_code ec;
     fs::rename(p, taggedPath, ec);
@@ -137,6 +145,13 @@ static int cmdDaemon() {
 
         // 跳过已标记的文件
         if (smartscreen::tagging::isTagged(filename)) {
+            return;
+        }
+
+        // 只标记有执行权限的文件
+        std::error_code permEc;
+        auto perms = fs::status(p, permEc).permissions();
+        if (permEc || (perms & fs::perms::owner_exec) == fs::perms::none) {
             return;
         }
 
