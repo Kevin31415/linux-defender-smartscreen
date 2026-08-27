@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <sys/syscall.h>
 #include <dlfcn.h>
+#include <spawn.h>
 
 extern char** environ;
 
@@ -47,18 +48,15 @@ static void approve(const char* tagged, char* out, int size) {
     base = base ? base + 1 : tagged;
     int prefix = base - tagged;
 
-    // ".@.bashrc" → ".#.bashrc"
     if (base[0]=='.' && base[1]=='@' && base[2]=='.') {
         snprintf(out, size, "%.*s.#.%s", prefix, tagged, base+3); return;
     }
     int blen = strlen(base);
-    // "file@." → "file#."
     if (blen>=2 && base[blen-2]=='@' && base[blen-1]=='.') {
         snprintf(out, size, "%.*s%.*s", prefix, tagged, blen-2, base);
         out[prefix+blen-2]='#'; out[prefix+blen-1]='.'; out[prefix+blen]='\0';
         return;
     }
-    // "file@.txt" → "file#.txt"
     const char* at = strchr(base, '@');
     if (at && *(at+1)=='.') {
         int before = at - base;
@@ -146,6 +144,48 @@ int execvpe(const char* fn, char* const argv[], char* const envp[]) {
     if (ret == -1) { free(newp); return -1; }
     const char* exec_fn = newp ? newp : fn;
     int r = syscall(SYS_execve, exec_fn, argv, envp);
+    free(newp);
+    return r;
+}
+
+int posix_spawn(pid_t* pid, const char* path,
+                const posix_spawn_file_actions_t* file_actions,
+                const posix_spawnattr_t* attrp,
+                char* const argv[], char* const envp[]) {
+    static int (*real_posix_spawn)(pid_t*, const char*,
+                const posix_spawn_file_actions_t*,
+                const posix_spawnattr_t*,
+                char* const[], char* const[]) = NULL;
+    if (!real_posix_spawn) {
+        real_posix_spawn = dlsym(RTLD_NEXT, "posix_spawn");
+    }
+
+    char* newp = NULL;
+    int ret = do_intercept(path, &newp);
+    if (ret == -1) { free(newp); return -1; }
+    const char* exec_path = newp ? newp : path;
+    int r = real_posix_spawn(pid, exec_path, file_actions, attrp, argv, envp);
+    free(newp);
+    return r;
+}
+
+int posix_spawnp(pid_t* pid, const char* file,
+                 const posix_spawn_file_actions_t* file_actions,
+                 const posix_spawnattr_t* attrp,
+                 char* const argv[], char* const envp[]) {
+    static int (*real_posix_spawnp)(pid_t*, const char*,
+                 const posix_spawn_file_actions_t*,
+                 const posix_spawnattr_t*,
+                 char* const[], char* const[]) = NULL;
+    if (!real_posix_spawnp) {
+        real_posix_spawnp = dlsym(RTLD_NEXT, "posix_spawnp");
+    }
+
+    char* newp = NULL;
+    int ret = do_intercept(file, &newp);
+    if (ret == -1) { free(newp); return -1; }
+    const char* exec_file = newp ? newp : file;
+    int r = real_posix_spawnp(pid, exec_file, file_actions, attrp, argv, envp);
     free(newp);
     return r;
 }
