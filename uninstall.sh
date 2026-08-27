@@ -14,11 +14,11 @@ remove_from_rc() {
 }
 
 remove_from_rc "$HOME/.bashrc"
-remove_from_rc "$HOME/.zshrc"
+remove_from_rc "$HOME/.zshenv"
 remove_from_rc "$HOME/.profile"
 remove_from_rc "$HOME/.xprofile"
 
 echo ""
 echo "卸载完成。请执行以下命令生效："
 echo "  source ~/.bashrc"
-echo "  source ~/.zshrc"
+echo "  source ~/.zshenv"

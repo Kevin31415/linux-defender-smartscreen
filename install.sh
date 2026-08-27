@@ -18,6 +18,6 @@ add_to_rc() {
 }
 
 add_to_rc "$HOME/.bashrc"
-add_to_rc "$HOME/.zshrc"
+add_to_rc "$HOME/.zshenv"
 add_to_rc "$HOME/.profile"
 add_to_rc "$HOME/.xprofile"
