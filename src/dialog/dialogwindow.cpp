@@ -52,14 +52,14 @@ void DialogWindow::setupUi() {
     contentLayout->setSpacing(0);
 
     // 标题
-    titleLabel_ = new QLabel("目前无法访问 SmartScreen", content);
+    titleLabel_ = new QLabel("永远无法访问 SmartScreen", content);
     titleLabel_->setStyleSheet("color: white; font-size: 22px; font-weight: bold; background: transparent;");
     contentLayout->addWidget(titleLabel_);
     contentLayout->addSpacing(16);
 
     // 描述
     descLabel_ = new QLabel(
-        "无法访问 Linux Defender SmartScreen，因此无法帮助你确定是否可以运行此应用。",
+        "检查你的 Internet 连接也没用。无法访问 Linux Defender SmartScreen，因此本来也无法帮助你确定是否可以运行此程序。",
         content);
     descLabel_->setStyleSheet("color: white; font-size: 13px; background: transparent;");
     descLabel_->setWordWrap(true);
