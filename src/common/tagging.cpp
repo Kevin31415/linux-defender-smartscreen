@@ -9,28 +9,27 @@ namespace tagging {
 bool isTagged(const std::string& filename) {
     if (filename.empty()) return false;
 
-    // 点文件: 检查 ".@." 模式
-    // ".@.bashrc" → tagged
+    // 点文件: 检查 ".@." 或 ".#." 模式
     if (filename.size() >= 3 &&
         filename[0] == '.' &&
-        filename[1] == '@' &&
+        (filename[1] == '@' || filename[1] == '#') &&
         filename[2] == '.') {
         return true;
     }
 
-    // 普通文件: "@" 在最后一个 "." 之前
-    auto atPos = filename.find('@');
-    if (atPos == std::string::npos || atPos == 0) return false;
+    // 普通文件: "@" 或 "#" 在最后一个 "." 之前
+    auto markerPos = filename.find_first_of("@#");
+    if (markerPos == std::string::npos || markerPos == 0) return false;
 
     auto lastDot = filename.rfind('.');
     if (lastDot == std::string::npos) {
-        // 无扩展名: 检查 "@." 结尾
+        // 无扩展名: 检查 "@." 或 "#." 结尾
         return filename.size() >= 2 &&
-               filename[filename.size() - 2] == '@' &&
+               (filename[filename.size() - 2] == '@' || filename[filename.size() - 2] == '#') &&
                filename[filename.size() - 1] == '.';
     }
 
-    return atPos < lastDot;
+    return markerPos < lastDot;
 }
 
 std::string tagFilename(const std::string& filename) {
