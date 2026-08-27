@@ -15,6 +15,11 @@ Makefile
 smartscreend
 smartscreen-dialog
 
+# Shared libraries
+*.so
+*.so.*
+*.dylib
+
 # Object files
 *.o
 *.obj
@@ -24,12 +29,9 @@ smartscreen-dialog
 *.gch
 *.pch
 
-# Libraries
+# Static libraries
 *.a
 *.lib
-*.so
-*.so.*
-*.dylib
 
 # Qt generated files
 moc_*.cpp
@@ -43,14 +45,11 @@ qrc_*.cpp
 *.swp
 *.swo
 *~
+
+# OS files
 .DS_Store
+Thumbs.db
 
-# Plan file (local only)
+# Local files
 plan.md
-
-# Package files
-*.tar.gz
-*.zip
-*.deb
-*.rpm
-
+mds.png

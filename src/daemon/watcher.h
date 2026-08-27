@@ -5,6 +5,8 @@
 #include <functional>
 #include <atomic>
 #include <thread>
+#include <map>
+#include <mutex>
 
 namespace smartscreen {
 namespace daemon {
@@ -16,24 +18,24 @@ public:
     explicit Watcher(const std::string& watchDir);
     ~Watcher();
 
-    // 禁止拷贝
     Watcher(const Watcher&) = delete;
     Watcher& operator=(const Watcher&) = delete;
 
-    // 启动监控（阻塞直到 stop 被调用）
     void start(FileCallback onNewFile);
-
-    // 停止监控
     void stop();
-
-    // 检查是否正在运行
     bool isRunning() const;
 
 private:
+    void addWatchRecursive(const std::string& dir);
+    void addWatch(const std::string& dir);
+
     std::string watchDir_;
     std::atomic<bool> running_{false};
     std::thread watchThread_;
     int inotifyFd_{-1};
+
+    std::mutex watchMutex_;
+    std::map<int, std::string> wdToPath_;  // watch descriptor → directory path
 };
 
 } // namespace daemon

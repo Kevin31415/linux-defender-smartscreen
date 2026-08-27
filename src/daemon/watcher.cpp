@@ -18,6 +18,28 @@ Watcher::~Watcher() {
     stop();
 }
 
+void Watcher::addWatch(const std::string& dir) {
+    uint32_t mask = IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE_SELF;
+    int wd = inotify_add_watch(inotifyFd_, dir.c_str(), mask);
+    if (wd >= 0) {
+        std::lock_guard<std::mutex> lock(watchMutex_);
+        wdToPath_[wd] = dir;
+    } else {
+        logger::logWarn("无法监控: " + dir + " - " + strerror(errno));
+    }
+}
+
+void Watcher::addWatchRecursive(const std::string& dir) {
+    addWatch(dir);
+
+    std::error_code ec;
+    for (auto& entry : fs::directory_iterator(dir, fs::directory_options::skip_permission_denied, ec)) {
+        if (entry.is_directory(ec)) {
+            addWatchRecursive(entry.path().string());
+        }
+    }
+}
+
 void Watcher::start(FileCallback onNewFile) {
     if (running_.load()) {
         return;
@@ -29,19 +51,13 @@ void Watcher::start(FileCallback onNewFile) {
         return;
     }
 
-    uint32_t mask = IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE;
-    int wd = inotify_add_watch(inotifyFd_, watchDir_.c_str(), mask);
-    if (wd < 0) {
-        logger::logWarn("inotify_add_watch 失败: " + watchDir_ + " - " + strerror(errno));
-        close(inotifyFd_);
-        inotifyFd_ = -1;
-        return;
-    }
+    // 递归添加所有子目录的 watch
+    addWatchRecursive(watchDir_);
+    logger::logInfo("开始监控目录: " + watchDir_ + " (递归)");
 
     running_.store(true);
-    logger::logInfo("开始监控目录: " + watchDir_);
 
-    watchThread_ = std::thread([this, onNewFile, wd]() {
+    watchThread_ = std::thread([this, onNewFile]() {
         constexpr size_t BUF_SIZE = 8192;
         alignas(inotify_event) char buf[BUF_SIZE];
 
@@ -59,26 +75,38 @@ void Watcher::start(FileCallback onNewFile) {
             for (char* ptr = buf; ptr < buf + len; ) {
                 auto* event = reinterpret_cast<inotify_event*>(ptr);
 
-                // 跳过目录事件
-                if (event->mask & IN_ISDIR) {
-                    ptr += sizeof(inotify_event) + event->len;
-                    continue;
+                std::string dirPath;
+                {
+                    std::lock_guard<std::mutex> lock(watchMutex_);
+                    auto it = wdToPath_.find(event->wd);
+                    if (it != wdToPath_.end()) {
+                        dirPath = it->second;
+                    }
                 }
 
-                // 只处理文件事件
-                if (event->len > 0 &&
-                    (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE))) {
-                    std::string filepath = watchDir_ + "/" + event->name;
+                if (!dirPath.empty() && event->len > 0) {
+                    std::string fullPath = dirPath + "/" + event->name;
 
-                    // 等待文件写入完成（特别是 IN_CREATE 后可能还有写入）
-                    if (event->mask & IN_CREATE) {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                    // 新建子目录: 添加 watch
+                    if (event->mask & IN_CREATE && (event->mask & IN_ISDIR)) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                        addWatchRecursive(fullPath);
+                        logger::logInfo("新增监控子目录: " + fullPath);
                     }
 
-                    // 验证文件存在且是常规文件
-                    std::error_code ec;
-                    if (fs::is_regular_file(filepath, ec) && !ec) {
-                        onNewFile(filepath);
+                    // 目录被删除: 清理 watch 映射
+                    if (event->mask & IN_DELETE_SELF) {
+                        std::lock_guard<std::mutex> lock(watchMutex_);
+                        wdToPath_.erase(event->wd);
+                    }
+
+                    // 文件事件: 处理打标签
+                    if (!(event->mask & IN_ISDIR) &&
+                        (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO))) {
+                        std::error_code ec;
+                        if (fs::is_regular_file(fullPath, ec) && !ec) {
+                            onNewFile(fullPath);
+                        }
                     }
                 }
 
@@ -86,7 +114,12 @@ void Watcher::start(FileCallback onNewFile) {
             }
         }
 
-        inotify_rm_watch(inotifyFd_, wd);
+        // 清理所有 watch
+        std::lock_guard<std::mutex> lock(watchMutex_);
+        for (auto& [wd, path] : wdToPath_) {
+            inotify_rm_watch(inotifyFd_, wd);
+        }
+        wdToPath_.clear();
     });
 }
 
