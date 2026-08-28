@@ -19,7 +19,7 @@ Watcher::~Watcher() {
 }
 
 void Watcher::addWatch(const std::string& dir) {
-    uint32_t mask = IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE_SELF;
+    uint32_t mask = IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE_SELF | IN_ATTRIB;
     int wd = inotify_add_watch(inotifyFd_, dir.c_str(), mask);
     if (wd >= 0) {
         std::lock_guard<std::mutex> lock(watchMutex_);
@@ -102,7 +102,7 @@ void Watcher::start(FileCallback onNewFile) {
 
                     // 文件事件: 处理打标签
                     if (!(event->mask & IN_ISDIR) &&
-                        (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO))) {
+                        (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO | IN_ATTRIB))) {
                         std::error_code ec;
                         if (fs::is_regular_file(fullPath, ec) && !ec) {
                             onNewFile(fullPath);
