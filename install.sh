@@ -8,7 +8,7 @@ add_to_rc() {
     rc="$1"
     if [ ! -f "$rc" ]; then return; fi
     if grep -q "LD_PRELOAD=.*libsmartscreen_hook" "$rc" 2>/dev/null; then
-        echo "$rc 已配置，跳过"
+        echo "$rc 已配置"
         return
     fi
     echo "" >> "$rc"
